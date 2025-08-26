@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
 
     private val database by lazy { AppDatabase.getDatabase(this) }
     private val viewModel: ApontamentoViewModel by viewModels {
-        ApontamentoViewModelFactory(database.apontamentoDao())
+        ApontamentoViewModelFactory(database.apontamentoDao(), application)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

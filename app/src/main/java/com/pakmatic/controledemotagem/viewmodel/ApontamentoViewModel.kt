@@ -23,8 +23,11 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import androidx.core.content.FileProvider
 
-class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(Application()) {
+class ApontamentoViewModel(private val dao: ApontamentoDao, application: Application) : AndroidViewModel(application) {
+
+    private val appContext = application.applicationContext
 
     private val _nomeResponsavel = MutableStateFlow("")
     val nomeResponsavel = _nomeResponsavel.asStateFlow()
@@ -54,12 +57,12 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
     val apontamentoParaNovaFase = _apontamentoParaNovaFase.asStateFlow()
     private val _faseParaEditar = MutableStateFlow<Fase?>(null)
     val faseParaEditar = _faseParaEditar.asStateFlow()
-
     private val _isCronometroPausado = MutableStateFlow(false)
     val isCronometroPausado: StateFlow<Boolean> = _isCronometroPausado.asStateFlow()
 
     val todosApontamentos = dao.buscarTodosCompletos().stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000L), initialValue = emptyList())
 
+    // Funções de controle de estado e CRUD
     fun onNomeResponsavelChange(novoNome: String) { _nomeResponsavel.value = novoNome }
     fun onItemChange(novoItem: String) { _item.value = novoItem }
     fun onDescricaoItemChange(novaDescricao: String) { _descricaoItem.value = novaDescricao }
@@ -69,7 +72,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
     fun onHoraInicioChange(novaHora: String) { _horaInicioEdit.value = novaHora }
     fun onDataFinalChange(novaData: String) { _dataFinalEdit.value = novaData }
     fun onHoraFinalChange(novaHora: String) { _horaFinalEdit.value = novaHora }
-
     fun onAbrirDialogImpedimento(apontamento: Apontamento) { _mostrarDialogImpedimento.value = apontamento }
     fun onFecharDialogImpedimento() { _mostrarDialogImpedimento.value = null }
     fun onAbrirDialogDelecao(apontamento: Apontamento) { _apontamentoParaDeletar.value = apontamento }
@@ -88,7 +90,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
         _apontamentoParaEditar.value = apontamento
     }
     fun onFecharDialogEdicao() { limparCampos(); _apontamentoParaEditar.value = null }
-
     fun onAbrirDialogEdicaoFase(fase: Fase) {
         _descricaoFase.value = fase.descricao
         _faseParaEditar.value = fase
@@ -110,7 +111,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
             dao.deletarFase(fase)
         }
     }
-
     fun salvarEdicao() {
         val apontamentoAntigo = _apontamentoParaEditar.value ?: return
         try {
@@ -128,7 +128,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
             _isCronometroPausado.value = true
         }
     }
-
     fun toggleCronometro() {
         _isCronometroPausado.value = !_isCronometroPausado.value
         if (!_isCronometroPausado.value) {
@@ -154,11 +153,13 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
     }
 
     private fun saveBitmapToFile(context: Context, bitmap: Bitmap): Uri? {
-        val filename = "JPEG_${System.currentTimeMillis()}.jpg"
-        val outputDir = File(context.filesDir, "photos")
-        if (!outputDir.exists()) outputDir.mkdirs()
-        val photoFile = File(outputDir, filename)
-
+        val outputDir = File(context.cacheDir, "images")
+        outputDir.mkdirs()
+        val photoFile = File.createTempFile(
+            "img_${System.currentTimeMillis()}_",
+            ".jpg",
+            outputDir
+        )
         return try {
             FileOutputStream(photoFile).use { out ->
                 val targetWidth = 480
@@ -166,7 +167,11 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
                 val scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
                 scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
             }
-            Uri.fromFile(photoFile)
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                photoFile
+            )
         } catch (e: Exception) {
             Log.e("ApontamentoViewModel", "Erro ao salvar bitmap: ${e.message}")
             null
@@ -189,19 +194,15 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
             null
         }
     }
-
     fun adicionarFotoAFase(fase: Fase, fotoUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
-        val context = getApplication<Application>().applicationContext
-        val savedUri = processAndSavePhoto(context, fotoUri)
+        val savedUri = processAndSavePhoto(appContext, fotoUri)
         savedUri?.let { uri ->
             val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply { add(uri.toString()) }
             dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
         }
     }
-
     fun substituirFotoDaFase(fase: Fase, oldUriString: String, newUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
-        val context = getApplication<Application>().applicationContext
-        val savedUri = processAndSavePhoto(context, newUri)
+        val savedUri = processAndSavePhoto(appContext, newUri)
         savedUri?.let { uri ->
             val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply {
                 val index = indexOf(oldUriString)
@@ -212,7 +213,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(A
             dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
         }
     }
-
     fun girarFotoDaFase(context: Context, fase: Fase, fotoUriString: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
