@@ -8,7 +8,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import com.pakmatic.controledemotagem.R
-import com.pakmatic.controledemotagem.data.local.ApontamentoComImpedimentos
+import com.pakmatic.controledemotagem.data.local.ApontamentoCompleto // <<< CORREÇÃO 1 AQUI
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
@@ -20,13 +20,11 @@ object PdfExporter {
     private const val PAGE_HEIGHT = 842 // Altura A4 em pontos
     private const val MARGIN = 30f
 
-    // Função para formatar o timestamp para uma data/hora legível
     private fun formatTimestamp(timestamp: Long?): String {
         if (timestamp == null) return "--:--"
         return SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date(timestamp))
     }
 
-    // Função para formatar a duração em segundos para um formato legível
     private fun formatDuration(totalSeconds: Long): String {
         if (totalSeconds < 0) return "0h 0m"
         val hours = TimeUnit.SECONDS.toHours(totalSeconds)
@@ -34,7 +32,8 @@ object PdfExporter {
         return String.format("%02dh %02dm", hours, minutes)
     }
 
-    fun gerarPdf(context: Context, outputStream: OutputStream, apontamentos: List<ApontamentoComImpedimentos>) {
+    // <<< CORREÇÃO 2 AQUI >>>
+    fun gerarPdf(context: Context, outputStream: OutputStream, apontamentos: List<ApontamentoCompleto>) {
         val document = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
         val page = document.startPage(pageInfo)
@@ -42,7 +41,6 @@ object PdfExporter {
 
         var y = MARGIN
 
-        // --- Estilos de Texto (Paint objects) ---
         val paintTitle = Paint().apply {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textSize = 18f
@@ -66,19 +64,17 @@ object PdfExporter {
             color = Color.LTGRAY
         }
 
-        // --- Desenhar o Cabeçalho do Documento ---
         try {
             val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.logo)
             val scaledLogo = Bitmap.createScaledBitmap(logoBitmap, 85, 25, false)
             canvas.drawBitmap(scaledLogo, MARGIN, y, null)
         } catch (e: Exception) {
-            e.printStackTrace() // Log do erro caso a logo não seja encontrada
+            e.printStackTrace()
         }
 
         canvas.drawText("Relatório de Montagem", PAGE_WIDTH - MARGIN - 120, y + 20, paintTitle)
         y += 60
 
-        // --- Desenhar o Cabeçalho da Tabela ---
         val headerY = y
         canvas.drawLine(MARGIN, headerY + 5, PAGE_WIDTH - MARGIN, headerY + 5, paintLine)
         canvas.drawText("ITEM", MARGIN, headerY, paintHeader)
@@ -88,9 +84,8 @@ object PdfExporter {
         canvas.drawText("T. PARADO", MARGIN + 340, headerY, paintHeader)
         canvas.drawText("STATUS", MARGIN + 420, headerY, paintHeader)
         canvas.drawText("DESCRIÇÃO", MARGIN + 480, headerY, paintHeader)
-        y += 20 // Espaço após o header
+        y += 20
 
-        // --- Desenhar os Dados da Tabela (Loop) ---
         apontamentos.forEach { item ->
             val apontamento = item.apontamento
             canvas.drawLine(MARGIN, y + 5, PAGE_WIDTH - MARGIN, y + 5, paintLine)
@@ -105,7 +100,6 @@ object PdfExporter {
             y += 15
         }
 
-        // --- Finalizar o Documento ---
         document.finishPage(page)
 
         try {

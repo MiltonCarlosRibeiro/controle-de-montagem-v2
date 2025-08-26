@@ -6,7 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 
-// Nova tabela para registrar cada impedimento individualmente
+// (A classe Impedimento continua a mesma)
 @Entity(
     tableName = "impedimentos",
     foreignKeys = [
@@ -14,30 +14,37 @@ import androidx.room.Relation
             entity = Apontamento::class,
             parentColumns = ["id"],
             childColumns = ["apontamentoId"],
-            onDelete = ForeignKey.CASCADE // Se o apontamento for deletado, seus impedimentos também serão.
+            onDelete = ForeignKey.CASCADE
         )
     ]
 )
 data class Impedimento(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val apontamentoId: Int, // Chave estrangeira para ligar ao Apontamento
+    val apontamentoId: Int,
     val descricao: String,
     val timestampInicio: Long,
     var timestampFinal: Long? = null,
     var duracaoSegundos: Long = 0
 )
 
-// Classe de Relação para buscar um Apontamento com sua lista de Impedimentos
-data class ApontamentoComImpedimentos(
+// <<< CLASSE ATUALIZADA/RENOMEADA >>>
+// Renomeamos para ApontamentoCompleto para refletir que agora ela busca tudo
+data class ApontamentoCompleto(
     @Embedded val apontamento: Apontamento,
     @Relation(
         parentColumn = "id",
         entityColumn = "apontamentoId"
     )
-    val impedimentos: List<Impedimento>
+    val impedimentos: List<Impedimento>,
+
+    // <<< NOVA RELAÇÃO ADICIONADA >>>
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "apontamentoId"
+    )
+    val fases: List<Fase>
 ) {
-    // Lógica para calcular o tempo total parado somando a duração de todos os impedimentos
     val tempoTotalParadoSegundos: Long
         get() = impedimentos.sumOf { it.duracaoSegundos }
 }

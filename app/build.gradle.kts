@@ -50,14 +50,21 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
 
-    // Dependências adicionadas
+    // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // Permissões e Imagens
+    implementation(libs.accompanist.permissions)
+    implementation(libs.coil.compose)
 
+    // Testes
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

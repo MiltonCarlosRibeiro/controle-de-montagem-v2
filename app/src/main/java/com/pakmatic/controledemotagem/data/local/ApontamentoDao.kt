@@ -13,16 +13,13 @@ interface ApontamentoDao {
     @Update
     suspend fun atualizarApontamento(apontamento: Apontamento)
 
-    @Transaction
-    @Query("SELECT * FROM apontamentos ORDER BY timestampInicio DESC")
-    fun buscarTodosComImpedimentos(): Flow<List<ApontamentoComImpedimentos>>
-
-    // <<< CORREÇÃO AQUI >>>
-    // Trocamos a query manual pela anotação @Delete, que é mais segura.
-    // Ela deleta o item com base na chave primária (id) do objeto passado.
     @Delete
     suspend fun deletarApontamento(apontamento: Apontamento)
 
+    // <<< QUERY ATUALIZADA para usar a nova classe de relação >>>
+    @Transaction
+    @Query("SELECT * FROM apontamentos ORDER BY timestampInicio DESC")
+    fun buscarTodosCompletos(): Flow<List<ApontamentoCompleto>>
 
     // --- Métodos para Impedimentos ---
     @Insert
@@ -33,4 +30,14 @@ interface ApontamentoDao {
 
     @Query("SELECT * FROM impedimentos WHERE apontamentoId = :apontamentoId AND timestampFinal IS NULL ORDER BY timestampInicio DESC LIMIT 1")
     suspend fun buscarImpedimentoAberto(apontamentoId: Int): Impedimento?
+
+    // --- NOVOS MÉTODOS PARA FASES ---
+    @Insert
+    suspend fun inserirFase(fase: Fase)
+
+    @Update
+    suspend fun atualizarFase(fase: Fase)
+
+    @Query("SELECT * FROM fases WHERE apontamentoId = :apontamentoId AND timestampFinal IS NULL ORDER BY timestampInicio DESC LIMIT 1")
+    suspend fun buscarFaseAberta(apontamentoId: Int): Fase?
 }

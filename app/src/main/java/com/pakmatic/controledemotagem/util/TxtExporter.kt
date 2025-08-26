@@ -1,6 +1,6 @@
 package com.pakmatic.controledemotagem.util
 
-import com.pakmatic.controledemotagem.data.local.ApontamentoComImpedimentos
+import com.pakmatic.controledemotagem.data.local.ApontamentoCompleto
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -19,7 +19,8 @@ object TxtExporter {
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 
-    fun formatarParaTxt(apontamentos: List<ApontamentoComImpedimentos>): String {
+    // <<< ALTERAÇÃO AQUI: Recebe List<ApontamentoCompleto> >>>
+    fun formatarParaTxt(apontamentos: List<ApontamentoCompleto>): String {
         val builder = StringBuilder()
         val separador = "-".repeat(120) + "\n"
 

@@ -5,7 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Apontamento::class, Impedimento::class], version = 2) // <<< VERSÃO ATUALIZADA E NOVA ENTIDADE
+// <<< VERSÃO ATUALIZADA E NOVA ENTIDADE 'Fase' >>>
+@Database(entities = [Apontamento::class, Impedimento::class, Fase::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun apontamentoDao(): ApontamentoDao
@@ -21,7 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "controle_montagem_db"
                 )
-                    .fallbackToDestructiveMigration() // <<< Adicionado para facilitar a atualização durante o desenvolvimento
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
