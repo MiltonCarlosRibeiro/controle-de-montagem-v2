@@ -17,14 +17,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
 class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
 
-    // (StateFlows)
+    // (O início do ViewModel permanece o mesmo, sem alterações)
     private val _nomeResponsavel = MutableStateFlow("")
     val nomeResponsavel = _nomeResponsavel.asStateFlow()
     private val _item = MutableStateFlow("")
@@ -51,10 +50,7 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     val descricaoFase = _descricaoFase.asStateFlow()
     private val _apontamentoParaNovaFase = MutableStateFlow<Apontamento?>(null)
     val apontamentoParaNovaFase = _apontamentoParaNovaFase.asStateFlow()
-
     val todosApontamentos = dao.buscarTodosCompletos().stateIn(scope = viewModelScope, started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000L), initialValue = emptyList())
-
-    // (Funções de atualização de texto)
     fun onNomeResponsavelChange(novoNome: String) { _nomeResponsavel.value = novoNome }
     fun onItemChange(novoItem: String) { _item.value = novoItem }
     fun onDescricaoItemChange(novaDescricao: String) { _descricaoItem.value = novaDescricao }
@@ -64,8 +60,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     fun onHoraInicioChange(novaHora: String) { _horaInicioEdit.value = novaHora }
     fun onDataFinalChange(novaData: String) { _dataFinalEdit.value = novaData }
     fun onHoraFinalChange(novaHora: String) { _horaFinalEdit.value = novaHora }
-
-    // (Funções de controle de Dialogs)
     fun onAbrirDialogImpedimento(apontamento: Apontamento) { _mostrarDialogImpedimento.value = apontamento }
     fun onFecharDialogImpedimento() { _mostrarDialogImpedimento.value = null }
     fun onAbrirDialogDelecao(apontamento: Apontamento) { _apontamentoParaDeletar.value = apontamento }
@@ -129,12 +123,10 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
                         val matrix = Matrix().apply { postRotate(90f) }
                         val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 
-                        // Salva a imagem girada sobre a original
                         context.contentResolver.openOutputStream(fotoUri)?.use { outputStream ->
                             rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
                         }
                     }
-                    // Força a UI a recarregar a imagem
                     val faseAtualizada = fase.copy(caminhosFotos = fase.caminhosFotos.map { it })
                     withContext(Dispatchers.Main) {
                         dao.atualizarFase(faseAtualizada)
@@ -153,7 +145,15 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     fun finalizarFase(fase: Fase) { viewModelScope.launch { val timestampFinal = System.currentTimeMillis(); val faseAtualizada = fase.copy(timestampFinal = timestampFinal, duracaoSegundos = (timestampFinal - fase.timestampInicio) / 1000); dao.atualizarFase(faseAtualizada) } }
     private fun limparCampos() { _nomeResponsavel.value = ""; _item.value = ""; _descricaoItem.value = "" }
     fun exportarRelatorioTxt(context: Context, uri: Uri) { viewModelScope.launch(Dispatchers.IO) { val dados = todosApontamentos.value; val textoFormatado = TxtExporter.formatarParaTxt(dados); context.contentResolver.openOutputStream(uri)?.use { it.write(textoFormatado.toByteArray()) } } }
-    fun exportarRelatorioDetalhadoPdf(context: Context, uri: Uri, apontamento: ApontamentoCompleto) { viewModelScope.launch(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { outputStream -> PdfExporterDetalhado.gerarPdf(context, outputStream, apontamento) } } }
+
+    // <<< FUNÇÃO CORRIGIDA >>>
+    fun exportarRelatorioDetalhadoPdf(context: Context, uri: Uri, apontamentos: List<ApontamentoCompleto>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                PdfExporterDetalhado.gerarPdf(context, outputStream, apontamentos)
+            }
+        }
+    }
 }
 
 class ApontamentoViewModelFactory(private val dao: ApontamentoDao) : ViewModelProvider.Factory { override fun <T : ViewModel> create(modelClass: Class<T>): T { if (modelClass.isAssignableFrom(ApontamentoViewModel::class.java)) { @Suppress("UNCHECKED_CAST") return ApontamentoViewModel(dao) as T }; throw IllegalArgumentException("Unknown ViewModel class") } }

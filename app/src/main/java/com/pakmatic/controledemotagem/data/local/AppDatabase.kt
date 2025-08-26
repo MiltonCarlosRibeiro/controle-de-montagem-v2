@@ -8,10 +8,10 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [Apontamento::class, Impedimento::class, Fase::class],
-    version = 4, // Incremente a versão por causa da mudança no schema da 'Fase'
+    version = 4,
     exportSchema = false
 )
-@TypeConverters(Converters::class) // <<< ADICIONE ESTA LINHA
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun apontamentoDao(): ApontamentoDao

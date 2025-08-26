@@ -7,7 +7,6 @@ import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 
-// Conversor para que o Room possa salvar uma List<String> no banco de dados
 class Converters {
     @TypeConverter
     fun fromString(value: String?): List<String> {
@@ -32,7 +31,7 @@ class Converters {
     ],
     indices = [Index(value = ["apontamentoId"])]
 )
-@TypeConverters(Converters::class) // Aplica o conversor a esta entidade
+@TypeConverters(Converters::class)
 data class Fase(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
@@ -41,6 +40,5 @@ data class Fase(
     val timestampInicio: Long,
     var timestampFinal: Long? = null,
     var duracaoSegundos: Long = 0,
-    // <<< MUDANÇA PRINCIPAL: Agora é uma lista de caminhos >>>
     var caminhosFotos: List<String> = listOf()
 )

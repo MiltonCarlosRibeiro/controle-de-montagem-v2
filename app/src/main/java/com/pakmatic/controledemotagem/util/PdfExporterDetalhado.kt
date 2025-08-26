@@ -21,68 +21,88 @@ object PdfExporterDetalhado {
     private const val PAGE_HEIGHT = 842
     private const val MARGIN = 40f
 
-    fun gerarPdf(context: Context, outputStream: OutputStream, apontamento: ApontamentoCompleto) {
+    fun gerarPdf(context: Context, outputStream: OutputStream, apontamentos: List<ApontamentoCompleto>) {
         val document = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
-        val page = document.startPage(pageInfo)
-        val canvas = page.canvas
-        var yPosition = MARGIN
 
-        val paintTitle = Paint().apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 16f; color = Color.BLACK }
-        val paintHeader = Paint(paintTitle).apply { textSize = 9f }
-        val paintBody = Paint().apply { typeface = Typeface.DEFAULT; textSize = 9f; color = Color.DKGRAY }
-        val paintLine = Paint().apply { strokeWidth = 1f; color = Color.LTGRAY }
+        apontamentos.forEachIndexed { index, apontamento ->
+            val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create()
 
-        val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.logo)
-        val scaledLogo = Bitmap.createScaledBitmap(logoBitmap, 106, 31, false)
-        canvas.drawBitmap(scaledLogo, MARGIN, yPosition, null)
-        val dataFormatada = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(apontamento.apontamento.timestampInicio))
-        canvas.drawText("RELATÓRIO DE FASES", PAGE_WIDTH - MARGIN - 120, yPosition + 15, paintTitle)
-        yPosition += 50
-        canvas.drawText("EQUIPAMENTO:", MARGIN, yPosition, paintHeader)
-        canvas.drawText(apontamento.apontamento.item, MARGIN + 90, yPosition, paintBody)
-        canvas.drawText("DATA:", PAGE_WIDTH - MARGIN - 80, yPosition, paintHeader)
-        canvas.drawText(dataFormatada, PAGE_WIDTH - MARGIN - 40, yPosition, paintBody)
-        yPosition += 15
-        canvas.drawText("RESPONSÁVEL:", MARGIN, yPosition, paintHeader)
-        canvas.drawText(apontamento.apontamento.nomeResponsavel, MARGIN + 90, yPosition, paintBody)
-        yPosition += 30
+            // <<< CORREÇÃO 1: MUDANÇA DE 'val' PARA 'var' >>>
+            var page = document.startPage(pageInfo)
+            var canvas = page.canvas
+            var yPosition = MARGIN
 
-        apontamento.fases.forEach { fase ->
-            canvas.drawLine(MARGIN, yPosition - 5, PAGE_WIDTH - MARGIN, yPosition - 5, paintLine)
+            val paintTitle = Paint().apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 16f; color = Color.BLACK }
+            val paintHeader = Paint(paintTitle).apply { textSize = 9f }
+            val paintBody = Paint().apply { typeface = Typeface.DEFAULT; textSize = 9f; color = Color.DKGRAY }
+            val paintLine = Paint().apply { strokeWidth = 1f; color = Color.LTGRAY }
 
-            // <<< CORREÇÃO AQUI: Usa o primeiro item da lista de fotos >>>
-            val primeiraFotoUri = fase.caminhosFotos.firstOrNull()
+            val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.logo)
+            val scaledLogo = Bitmap.createScaledBitmap(logoBitmap, 106, 31, false)
+            canvas.drawBitmap(scaledLogo, MARGIN, yPosition, null)
 
-            if (primeiraFotoUri != null) {
-                try {
-                    val fotoStream = context.contentResolver.openInputStream(Uri.parse(primeiraFotoUri))
-                    val fotoBitmap = BitmapFactory.decodeStream(fotoStream)
-                    val scaledFoto = Bitmap.createScaledBitmap(fotoBitmap, 80, 80, true)
-                    canvas.drawBitmap(scaledFoto, MARGIN, yPosition, null)
-                    fotoStream?.close()
-                } catch (e: Exception) {
-                    canvas.drawRect(MARGIN, yPosition, MARGIN + 80, yPosition + 80, paintLine)
-                    canvas.drawText("?", MARGIN + 35, yPosition + 45, paintTitle)
-                }
-            }
+            val dataFormatada = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(apontamento.apontamento.timestampInicio))
+            canvas.drawText("RELATÓRIO DE FASES", PAGE_WIDTH - MARGIN - 120, yPosition + 15, paintTitle)
+            yPosition += 50
 
-            val textX = if (primeiraFotoUri != null) MARGIN + 95 else MARGIN
-            canvas.drawText("Fase:", textX, yPosition + 10, paintHeader)
+            canvas.drawText("EQUIPAMENTO:", MARGIN, yPosition, paintHeader)
             yPosition += 12
-            val descricao = fase.descricao
-            var start = 0
-            while (start < descricao.length) {
-                val end = paintBody.breakText(descricao, start, descricao.length, true, PAGE_WIDTH - textX - MARGIN, null)
-                canvas.drawText(descricao, start, start + end, textX, yPosition, paintBody)
-                start += end
-                yPosition += 12
+            canvas.drawText(apontamento.apontamento.item, MARGIN, yPosition, paintBody)
+            yPosition += 20
+
+            canvas.drawText("RESPONSÁVEL:", MARGIN, yPosition, paintHeader)
+            yPosition += 12
+            canvas.drawText(apontamento.apontamento.nomeResponsavel, MARGIN, yPosition, paintBody)
+
+            canvas.drawText("DATA:", PAGE_WIDTH - MARGIN - 80, yPosition - 10, paintHeader)
+            canvas.drawText(dataFormatada, PAGE_WIDTH - MARGIN - 80, yPosition, paintBody)
+            yPosition += 30
+
+            apontamento.fases.forEach { fase ->
+                // <<< CORREÇÃO 2: LÓGICA DE NOVA PÁGINA AJUSTADA >>>
+                if (yPosition > PAGE_HEIGHT - 100) {
+                    document.finishPage(page)
+                    val newPageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, document.pages.size + 1).create()
+                    page = document.startPage(newPageInfo)
+                    canvas = page.canvas
+                    yPosition = MARGIN
+                }
+
+                canvas.drawLine(MARGIN, yPosition - 5, PAGE_WIDTH - MARGIN, yPosition - 5, paintLine)
+                val primeiraFotoUri = fase.caminhosFotos.firstOrNull()
+                var textX = MARGIN
+                var fotoHeight = 0f
+                if (primeiraFotoUri != null) {
+                    try {
+                        val fotoStream = context.contentResolver.openInputStream(Uri.parse(primeiraFotoUri))
+                        val fotoBitmap = BitmapFactory.decodeStream(fotoStream)
+                        val scaledFoto = Bitmap.createScaledBitmap(fotoBitmap, 80, 80, true)
+                        canvas.drawBitmap(scaledFoto, MARGIN, yPosition, null)
+                        fotoStream?.close()
+                        textX = MARGIN + 95
+                        fotoHeight = 85f
+                    } catch (e: Exception) { /* Ignora foto corrompida */ }
+                }
+                canvas.drawText("Fase:", textX, yPosition + 10, paintHeader)
+                var textY = yPosition + 22
+                val descricao = fase.descricao
+                var start = 0
+                while (start < descricao.length) {
+                    val end = paintBody.breakText(descricao, start, descricao.length, true, PAGE_WIDTH - textX - MARGIN, null)
+                    canvas.drawText(descricao, start, start + end, textX, textY, paintBody)
+                    start += end
+                    textY += 12
+                }
+                yPosition += Math.max(fotoHeight, textY - yPosition + 10)
             }
-            yPosition += 10
-            if (yPosition > PAGE_HEIGHT - 50) { document.finishPage(page); yPosition = MARGIN }
+
+            document.finishPage(page)
         }
 
-        document.finishPage(page)
-        try { document.writeTo(outputStream) } finally { document.close() }
+        try {
+            document.writeTo(outputStream)
+        } finally {
+            document.close()
+        }
     }
 }

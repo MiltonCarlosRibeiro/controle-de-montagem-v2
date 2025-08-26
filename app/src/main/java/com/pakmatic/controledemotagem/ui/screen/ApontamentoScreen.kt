@@ -74,10 +74,17 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
 
     if (mostrarDialogNovoApontamento) { AlertDialog(onDismissRequest = { mostrarDialogNovoApontamento = false }, title = { Text("Iniciar Nova Montagem") }, text = { InputSection(nome = nomeResponsavel, onNomeChange = viewModel::onNomeResponsavelChange, item = item, onItemChange = viewModel::onItemChange, desc = descricaoItem, onDescChange = viewModel::onDescricaoItemChange) }, confirmButton = { Button(onClick = { viewModel.iniciarNovaMontagem(); mostrarDialogNovoApontamento = false }) { Text("Iniciar") } }, dismissButton = { TextButton(onClick = { mostrarDialogNovoApontamento = false }) { Text("Cancelar") } }) }
     val launcherTxt = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri -> uri?.let { viewModel.exportarRelatorioTxt(context, it) } }
-    val launcherPdfDetalhado = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri -> if (uri != null && ultimoItemFinalizado != null) { viewModel.exportarRelatorioDetalhadoPdf(context, uri, ultimoItemFinalizado) } }
+    val launcherPdfHistorico = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf"),
+        onResult = { uri ->
+            if (uri != null && historico.isNotEmpty()) {
+                viewModel.exportarRelatorioDetalhadoPdf(context, uri, historico)
+            }
+        }
+    )
 
     Scaffold(
-        topBar = { TopAppBar(title = { Image(painter = painterResource(id = R.drawable.logo), contentDescription = "Logo", modifier = Modifier.height(30.dp)) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer), actions = { IconButton(onClick = { viewModel.onNomeResponsavelChange(""); viewModel.onItemChange(""); viewModel.onDescricaoItemChange(""); mostrarDialogNovoApontamento = true }) { Icon(Icons.Default.AddCircle, contentDescription = "Iniciar Nova Montagem") }; var menuAberto by remember { mutableStateOf(false) }; IconButton(onClick = { menuAberto = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Mais opções") }; DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) { DropdownMenuItem(text = { Text("Exportar TXT (Geral)") }, onClick = { menuAberto = false; launcherTxt.launch("relatorio_geral.txt") }); DropdownMenuItem(text = { Text("Exportar PDF Detalhado (Último)") }, enabled = ultimoItemFinalizado != null, onClick = { menuAberto = false; launcherPdfDetalhado.launch("relatorio_detalhado_${ultimoItemFinalizado?.apontamento?.item}.pdf") }) } }) }
+        topBar = { TopAppBar(title = { Image(painter = painterResource(id = R.drawable.logo), contentDescription = "Logo", modifier = Modifier.height(30.dp)) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer), actions = { IconButton(onClick = { viewModel.onNomeResponsavelChange(""); viewModel.onItemChange(""); viewModel.onDescricaoItemChange(""); mostrarDialogNovoApontamento = true }) { Icon(Icons.Default.AddCircle, contentDescription = "Iniciar Nova Montagem") }; var menuAberto by remember { mutableStateOf(false) }; IconButton(onClick = { menuAberto = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Mais opções") }; DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) { DropdownMenuItem(text = { Text("Exportar TXT (Geral)") }, onClick = { menuAberto = false; launcherTxt.launch("relatorio_geral.txt") }); DropdownMenuItem(text = { Text("Exportar PDF (Histórico)") }, enabled = historico.isNotEmpty(), onClick = { menuAberto = false; launcherPdfHistorico.launch("relatorio_historico.pdf") }) } }) }
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (itemAtivo != null) {
@@ -103,24 +110,9 @@ fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel:
     var fotoUri by remember { mutableStateOf<Uri?>(null) }
     var faseParaFotografar by remember { mutableStateOf<Fase?>(null) }
     var fotoAntigaParaSubstituir by remember { mutableStateOf<String?>(null) }
-
     val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
-
-    val cameraAddLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.TakePicture()) { success ->
-        if (success) { fotoUri?.let { uri -> faseParaFotografar?.let { fase -> viewModel.adicionarFotoAFase(fase, uri) } } }
-    }
-
-    val cameraReplaceLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.TakePicture()) { success ->
-        if (success) {
-            val novaUri = fotoUri
-            val antigaUriString = fotoAntigaParaSubstituir
-            val faseAtual = faseParaFotografar
-            if (novaUri != null && antigaUriString != null && faseAtual != null) {
-                viewModel.substituirFotoDaFase(faseAtual, antigaUriString, novaUri)
-            }
-        }
-    }
-
+    val cameraAddLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.TakePicture()) { success -> if (success) { fotoUri?.let { uri -> faseParaFotografar?.let { fase -> viewModel.adicionarFotoAFase(fase, uri) } } } }
+    val cameraReplaceLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.TakePicture()) { success -> if (success) { val novaUri = fotoUri; val antigaUriString = fotoAntigaParaSubstituir; val faseAtual = faseParaFotografar; if (novaUri != null && antigaUriString != null && faseAtual != null) { viewModel.substituirFotoDaFase(faseAtual, antigaUriString, novaUri) } } }
     Text("Fases do Histórico", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth())
     if (itemCompleto.fases.isEmpty()) {
         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -129,33 +121,12 @@ fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel:
     } else {
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(itemCompleto.fases, key = { it.id }) { fase ->
-                FaseCard(
-                    fase = fase,
-                    onFinalizarClick = { viewModel.finalizarFase(fase) },
-                    onTirarNovaFotoClick = {
-                        faseParaFotografar = fase
-                        if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraAddLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() }
-                    },
-                    onSubstituirFotoClick = { fotoAntigaUriString ->
-                        faseParaFotografar = fase
-                        fotoAntigaParaSubstituir = fotoAntigaUriString
-                        if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraReplaceLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() }
-                    },
-                    onGirarFotoClick = { fotoUriString ->
-                        viewModel.girarFotoDaFase(context, fase, fotoUriString)
-                    }
-                )
+                FaseCard(fase = fase, onFinalizarClick = { viewModel.finalizarFase(fase) }, onTirarNovaFotoClick = { faseParaFotografar = fase; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraAddLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onSubstituirFotoClick = { fotoAntigaUriString -> faseParaFotografar = fase; fotoAntigaParaSubstituir = fotoAntigaUriString; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraReplaceLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onGirarFotoClick = { fotoUriString -> viewModel.girarFotoDaFase(context, fase, fotoUriString) })
             }
         }
     }
-    Button(
-        onClick = { viewModel.onAbrirDialogNovaFase(itemCompleto.apontamento) },
-        enabled = itemCompleto.apontamento.status == "Em Andamento",
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-    ) {
-        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-        Text("Adicionar Nova Fase")
+    Button(onClick = { viewModel.onAbrirDialogNovaFase(itemCompleto.apontamento) }, enabled = itemCompleto.apontamento.status == "Em Andamento", modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Adicionar Nova Fase")
     }
 }
 
@@ -164,24 +135,15 @@ fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () 
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Column(Modifier.padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(fase.descricao, fontWeight = FontWeight.Bold)
-                    Text("Início: ${formatTimestamp(fase.timestampInicio)}", fontSize = 12.sp)
-                    if (fase.timestampFinal != null) { Text("Duração: ${formatDuration(fase.duracaoSegundos)}", fontSize = 12.sp, color = Color.Gray) }
-                }
-                if (fase.timestampFinal == null) {
-                    IconButton(onClick = onFinalizarClick) { Icon(Icons.Default.CheckCircle, "Finalizar Fase", tint = Color(0xFF43A047)) }
-                }
+                Column(modifier = Modifier.weight(1f)) { Text(fase.descricao, fontWeight = FontWeight.Bold); Text("Início: ${formatTimestamp(fase.timestampInicio)}", fontSize = 12.sp); if (fase.timestampFinal != null) { Text("Duração: ${formatDuration(fase.duracaoSegundos)}", fontSize = 12.sp, color = Color.Gray) } }
+                if (fase.timestampFinal == null) { IconButton(onClick = onFinalizarClick) { Icon(Icons.Default.CheckCircle, "Finalizar Fase", tint = Color(0xFF43A047)) } }
             }
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fase.caminhosFotos) { fotoUriString ->
                     Box {
                         AsyncImage(model = Uri.parse(fotoUriString), contentDescription = "Foto da fase", modifier = Modifier.size(70.dp).clip(MaterialTheme.shapes.small).clickable { onSubstituirFotoClick(fotoUriString) }, contentScale = ContentScale.Crop)
-                        IconButton(
-                            onClick = { onGirarFotoClick(fotoUriString) },
-                            modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small).size(24.dp)
-                        ) {
+                        IconButton(onClick = { onGirarFotoClick(fotoUriString) }, modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small).size(24.dp)) {
                             Icon(Icons.Default.RotateRight, contentDescription = "Girar Foto", tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
@@ -202,14 +164,7 @@ fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () 
 fun CronometroAtivo(item: ApontamentoCompleto) {
     var tempoDecorrido by remember { mutableStateOf(0L) }
     LaunchedEffect(key1 = item.apontamento.status) {
-        if (item.apontamento.status == "Em Andamento") {
-            val tempoParadoTotal = item.tempoTotalParadoSegundos; val inicio = item.apontamento.timestampInicio
-            while (true) { val agora = System.currentTimeMillis(); val decorridoTotal = (agora - inicio) / 1000; tempoDecorrido = decorridoTotal - tempoParadoTotal; delay(1000) }
-        } else {
-            val tempoParadoPrevisto = item.impedimentos.filter { it.timestampFinal != null }.sumOf { it.duracaoSegundos }
-            val decorridoTotal = (System.currentTimeMillis() - item.apontamento.timestampInicio) / 1000
-            tempoDecorrido = decorridoTotal - tempoParadoPrevisto
-        }
+        if (item.apontamento.status == "Em Andamento") { val tempoParadoTotal = item.tempoTotalParadoSegundos; val inicio = item.apontamento.timestampInicio; while (true) { val agora = System.currentTimeMillis(); val decorridoTotal = (agora - inicio) / 1000; tempoDecorrido = decorridoTotal - tempoParadoTotal; delay(1000) } } else { val tempoParadoPrevisto = item.impedimentos.filter { it.timestampFinal != null }.sumOf { it.duracaoSegundos }; val decorridoTotal = (System.currentTimeMillis() - item.apontamento.timestampInicio) / 1000; tempoDecorrido = decorridoTotal - tempoParadoPrevisto }
     }
     val corCronometro = if (item.apontamento.status == "Em Andamento") Color(0xFF00897B) else Color(0xFFF57C00)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -224,9 +179,13 @@ fun CronometroAtivo(item: ApontamentoCompleto) {
 private fun ApontamentoCard(item: ApontamentoCompleto, viewModel: ApontamentoViewModel) {
     val apontamento = item.apontamento
     val context = LocalContext.current
-    val launcherPdfDetalhado = rememberLauncherForActivityResult(
+    val launcherPdfIndividual = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf"),
-        onResult = { uri -> uri?.let { viewModel.exportarRelatorioDetalhadoPdf(context, it, item) } }
+        onResult = { uri ->
+            if (uri != null) {
+                viewModel.exportarRelatorioDetalhadoPdf(context, uri, listOf(item))
+            }
+        }
     )
     val statusColor = when(apontamento.status) { "Em Andamento" -> Color(0xFF00897B); "Parado" -> Color(0xFFF57C00); "Finalizado" -> Color.Gray; else -> Color.Black }
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), elevation = CardDefaults.cardElevation(2.dp)) {
@@ -242,7 +201,7 @@ private fun ApontamentoCard(item: ApontamentoCompleto, viewModel: ApontamentoVie
                 Spacer(Modifier.height(4.dp)); Divider()
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { viewModel.reabrirMontagem(apontamento) }) { Text("Reabrir") }
-                    IconButton(onClick = { launcherPdfDetalhado.launch("relatorio_detalhado_${apontamento.item}.pdf") }) { Icon(Icons.Default.PictureAsPdf, contentDescription = "Exportar Relatório Detalhado") }
+                    IconButton(onClick = { launcherPdfIndividual.launch("relatorio_detalhado_${apontamento.item}.pdf") }) { Icon(Icons.Default.PictureAsPdf, contentDescription = "Exportar Relatório do Item") }
                     IconButton(onClick = { viewModel.onAbrirDialogEdicao(apontamento) }) { Icon(Icons.Default.Edit, "Editar") }
                     IconButton(onClick = { viewModel.onAbrirDialogDelecao(apontamento) }) { Icon(Icons.Default.Delete, "Deletar") }
                 }
@@ -272,13 +231,11 @@ fun DialogImpedimento(viewModel: ApontamentoViewModel, apontamento: Apontamento?
 @Composable
 fun DialogEdicao(viewModel: ApontamentoViewModel, apontamentoParaEditar: Apontamento?) {
     if (apontamentoParaEditar == null) return
-
     val context = LocalContext.current
     var showDatePickerInicio by remember { mutableStateOf(false) }
     var showTimePickerInicio by remember { mutableStateOf(false) }
     var showDatePickerFinal by remember { mutableStateOf(false) }
     var showTimePickerFinal by remember { mutableStateOf(false) }
-
     val nome by viewModel.nomeResponsavel.collectAsState()
     val item by viewModel.item.collectAsState()
     val desc by viewModel.descricaoItem.collectAsState()
@@ -328,10 +285,8 @@ fun DialogNovaFase(viewModel: ApontamentoViewModel, apontamento: Apontamento?) {
                     value = descricaoFase,
                     onValueChange = viewModel::onDescricaoFaseChange,
                     label = { Text("Descrição da fase") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp), // Aumenta a altura
-                    singleLine = false // Permite múltiplas linhas
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    singleLine = false
                 )
             },
             confirmButton = { Button(onClick = { viewModel.iniciarNovaFase() }) { Text("Iniciar Fase") } },
