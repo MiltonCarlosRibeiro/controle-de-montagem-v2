@@ -4,9 +4,14 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
-// <<< VERSÃO ATUALIZADA E NOVA ENTIDADE 'Fase' >>>
-@Database(entities = [Apontamento::class, Impedimento::class, Fase::class], version = 3)
+@Database(
+    entities = [Apontamento::class, Impedimento::class, Fase::class],
+    version = 4, // Incremente a versão por causa da mudança no schema da 'Fase'
+    exportSchema = false
+)
+@TypeConverters(Converters::class) // <<< ADICIONE ESTA LINHA
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun apontamentoDao(): ApontamentoDao

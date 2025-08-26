@@ -7,10 +7,10 @@ import androidx.room.PrimaryKey
 data class Apontamento(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val nomeResponsavel: String,
-    val item: String,
-    val descricaoItem: String,
-    val timestampInicio: Long,
-    var timestampFinal: Long? = null, // Pode ser nulo até a finalização
-    var status: String // "Em Andamento", "Parado", "Finalizado"
+    var nomeResponsavel: String,
+    var item: String,
+    var descricaoItem: String,
+    var timestampInicio: Long,
+    var timestampFinal: Long? = null,
+    var status: String
 )

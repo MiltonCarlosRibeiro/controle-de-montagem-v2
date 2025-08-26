@@ -19,7 +19,6 @@ object TxtExporter {
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 
-    // <<< ALTERAÇÃO AQUI: Recebe List<ApontamentoCompleto> >>>
     fun formatarParaTxt(apontamentos: List<ApontamentoCompleto>): String {
         val builder = StringBuilder()
         val separador = "-".repeat(120) + "\n"
@@ -52,13 +51,21 @@ object TxtExporter {
                             formatDuration(item.tempoTotalParadoSegundos).padEnd(15) +
                             apontamento.status.take(14).padEnd(15) + "\n"
                 )
+                // Detalhes das Fases
+                if (item.fases.isNotEmpty()) {
+                    builder.append("  ↳ Fases:\n")
+                    item.fases.forEach { fase ->
+                        builder.append(
+                            "    - ${fase.descricao} (Duração: ${formatDuration(fase.duracaoSegundos)})\n"
+                        )
+                    }
+                }
+                // Detalhes dos Impedimentos
                 if (item.impedimentos.isNotEmpty()) {
                     builder.append("  ↳ Impedimentos:\n")
                     item.impedimentos.forEach { impedimento ->
                         builder.append(
-                            "    - Início: ${formatTimestamp(impedimento.timestampInicio)} | " +
-                                    "Duração: ${formatDuration(impedimento.duracaoSegundos)} | " +
-                                    "Motivo: ${impedimento.descricao}\n"
+                            "    - ${impedimento.descricao} (Duração: ${formatDuration(impedimento.duracaoSegundos)})\n"
                         )
                     }
                 }
