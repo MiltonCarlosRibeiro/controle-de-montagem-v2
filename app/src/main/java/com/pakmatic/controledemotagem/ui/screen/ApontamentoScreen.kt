@@ -58,6 +58,7 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
     val apontamentoParaEditar by viewModel.apontamentoParaEditar.collectAsState()
     val apontamentoParaDeletar by viewModel.apontamentoParaDeletar.collectAsState()
     val apontamentoParaNovaFase by viewModel.apontamentoParaNovaFase.collectAsState()
+    val faseParaEditar by viewModel.faseParaEditar.collectAsState()
     var mostrarDialogNovoApontamento by remember { mutableStateOf(false) }
     val itemAtivo = apontamentosCompletos.find { it.apontamento.status != "Finalizado" }
     val historico = apontamentosCompletos.filter { it.apontamento.status == "Finalizado" }
@@ -67,6 +68,7 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
     DialogEdicao(viewModel, apontamentoParaEditar)
     DialogDelecao(viewModel, apontamentoParaDeletar)
     DialogNovaFase(viewModel, apontamentoParaNovaFase)
+    DialogEdicaoFase(viewModel, faseParaEditar)
 
     val nomeResponsavel by viewModel.nomeResponsavel.collectAsState()
     val item by viewModel.item.collectAsState()
@@ -100,8 +102,40 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
 }
 
 
+// <<< A DEFINIÇÃO DESTA FUNÇÃO ESTAVA FALTANDO >>>
 @Composable
-fun AcoesDaMontagemAtiva(apontamento: Apontamento, viewModel: ApontamentoViewModel) { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) { if (apontamento.status == "Em Andamento") { Button(onClick = { viewModel.onAbrirDialogImpedimento(apontamento) }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)) { Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Impedimento") }; Button(onClick = { viewModel.finalizarMontagem(apontamento) }) { Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Finalizar") } }; if (apontamento.status == "Parado") { Button(onClick = { viewModel.retomarTrabalho(apontamento) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047))) { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Retomar") } } } }
+fun AcoesDaMontagemAtiva(apontamento: Apontamento, viewModel: ApontamentoViewModel) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+    ) {
+        if (apontamento.status == "Em Andamento") {
+            Button(
+                onClick = { viewModel.onAbrirDialogImpedimento(apontamento) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Impedimento")
+            }
+            Button(onClick = { viewModel.finalizarMontagem(apontamento) }) {
+                Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Finalizar")
+            }
+        }
+        if (apontamento.status == "Parado") {
+            Button(
+                onClick = { viewModel.retomarTrabalho(apontamento) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047))
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Retomar")
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -121,7 +155,10 @@ fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel:
     } else {
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(itemCompleto.fases, key = { it.id }) { fase ->
-                FaseCard(fase = fase, onFinalizarClick = { viewModel.finalizarFase(fase) }, onTirarNovaFotoClick = { faseParaFotografar = fase; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraAddLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onSubstituirFotoClick = { fotoAntigaUriString -> faseParaFotografar = fase; fotoAntigaParaSubstituir = fotoAntigaUriString; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraReplaceLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onGirarFotoClick = { fotoUriString -> viewModel.girarFotoDaFase(context, fase, fotoUriString) })
+                FaseCard(fase = fase, onFinalizarClick = { viewModel.finalizarFase(fase) }, onTirarNovaFotoClick = { faseParaFotografar = fase; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraAddLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onSubstituirFotoClick = { fotoAntigaUriString -> faseParaFotografar = fase; fotoAntigaParaSubstituir = fotoAntigaUriString; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraReplaceLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onGirarFotoClick = { fotoUriString -> viewModel.girarFotoDaFase(context, fase, fotoUriString) },
+                    onEditClick = { viewModel.onAbrirDialogEdicaoFase(fase) },
+                    onDeleteClick = { viewModel.deletarFase(fase) }
+                )
             }
         }
     }
@@ -131,30 +168,28 @@ fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel:
 }
 
 @Composable
-fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () -> Unit, onSubstituirFotoClick: (String) -> Unit, onGirarFotoClick: (String) -> Unit) {
+fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () -> Unit, onSubstituirFotoClick: (String) -> Unit, onGirarFotoClick: (String) -> Unit, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Column(Modifier.padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) { Text(fase.descricao, fontWeight = FontWeight.Bold); Text("Início: ${formatTimestamp(fase.timestampInicio)}", fontSize = 12.sp); if (fase.timestampFinal != null) { Text("Duração: ${formatDuration(fase.duracaoSegundos)}", fontSize = 12.sp, color = Color.Gray) } }
-                if (fase.timestampFinal == null) { IconButton(onClick = onFinalizarClick) { Icon(Icons.Default.CheckCircle, "Finalizar Fase", tint = Color(0xFF43A047)) } }
+                Row {
+                    if (fase.timestampFinal == null) {
+                        IconButton(onClick = onFinalizarClick) { Icon(Icons.Default.CheckCircle, "Finalizar Fase", tint = Color(0xFF43A047)) }
+                    }
+                    IconButton(onClick = onEditClick) { Icon(Icons.Default.Edit, "Editar Fase", modifier = Modifier.size(20.dp)) }
+                    IconButton(onClick = onDeleteClick) { Icon(Icons.Default.Delete, "Deletar Fase", modifier = Modifier.size(20.dp)) }
+                }
             }
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fase.caminhosFotos) { fotoUriString ->
                     Box {
                         AsyncImage(model = Uri.parse(fotoUriString), contentDescription = "Foto da fase", modifier = Modifier.size(70.dp).clip(MaterialTheme.shapes.small).clickable { onSubstituirFotoClick(fotoUriString) }, contentScale = ContentScale.Crop)
-                        IconButton(onClick = { onGirarFotoClick(fotoUriString) }, modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small).size(24.dp)) {
-                            Icon(Icons.Default.RotateRight, contentDescription = "Girar Foto", tint = Color.White, modifier = Modifier.size(16.dp))
-                        }
+                        IconButton(onClick = { onGirarFotoClick(fotoUriString) }, modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small).size(24.dp)) { Icon(Icons.Default.RotateRight, contentDescription = "Girar Foto", tint = Color.White, modifier = Modifier.size(16.dp)) }
                     }
                 }
-                if (fase.timestampFinal == null) {
-                    item {
-                        Box(Modifier.size(70.dp).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small).clickable { onTirarNovaFotoClick() }, contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.AddAPhoto, "Adicionar foto", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
+                if (fase.timestampFinal == null) { item { Box(Modifier.size(70.dp).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small).clickable { onTirarNovaFotoClick() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.AddAPhoto, "Adicionar foto", tint = MaterialTheme.colorScheme.onSurfaceVariant) } } }
             }
         }
     }
@@ -293,4 +328,29 @@ fun DialogNovaFase(viewModel: ApontamentoViewModel, apontamento: Apontamento?) {
             dismissButton = { TextButton(onClick = { viewModel.onFecharDialogNovaFase() }) { Text("Cancelar") } }
         )
     }
+}
+
+@Composable
+fun DialogEdicaoFase(viewModel: ApontamentoViewModel, faseParaEditar: Fase?) {
+    if (faseParaEditar == null) return
+
+    val descricaoFase by viewModel.descricaoFase.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = { viewModel.onFecharDialogEdicaoFase() },
+        title = { Text("Editar Fase") },
+        text = {
+            OutlinedTextField(
+                value = descricaoFase,
+                onValueChange = viewModel::onDescricaoFaseChange,
+                label = { Text("Descrição da fase") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp),
+                singleLine = false
+            )
+        },
+        confirmButton = { Button(onClick = { viewModel.salvarEdicaoFase() }) { Text("Salvar") } },
+        dismissButton = { TextButton(onClick = { viewModel.onFecharDialogEdicaoFase() }) { Text("Cancelar") } }
+    )
 }

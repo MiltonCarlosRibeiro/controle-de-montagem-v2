@@ -25,9 +25,7 @@ object PdfExporterDetalhado {
         val document = PdfDocument()
 
         apontamentos.forEachIndexed { index, apontamento ->
-            val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create()
-
-            // <<< CORREÇÃO 1: MUDANÇA DE 'val' PARA 'var' >>>
+            var pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create()
             var page = document.startPage(pageInfo)
             var canvas = page.canvas
             var yPosition = MARGIN
@@ -37,6 +35,7 @@ object PdfExporterDetalhado {
             val paintBody = Paint().apply { typeface = Typeface.DEFAULT; textSize = 9f; color = Color.DKGRAY }
             val paintLine = Paint().apply { strokeWidth = 1f; color = Color.LTGRAY }
 
+            // --- Cabeçalho ---
             val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.logo)
             val scaledLogo = Bitmap.createScaledBitmap(logoBitmap, 106, 31, false)
             canvas.drawBitmap(scaledLogo, MARGIN, yPosition, null)
@@ -58,42 +57,70 @@ object PdfExporterDetalhado {
             canvas.drawText(dataFormatada, PAGE_WIDTH - MARGIN - 80, yPosition, paintBody)
             yPosition += 30
 
+            // --- Tabela de Fases ---
             apontamento.fases.forEach { fase ->
-                // <<< CORREÇÃO 2: LÓGICA DE NOVA PÁGINA AJUSTADA >>>
-                if (yPosition > PAGE_HEIGHT - 100) {
+                // Checa se precisa de uma nova página ANTES de desenhar o item
+                if (yPosition > PAGE_HEIGHT - 150) { // Margem de segurança maior para fotos
                     document.finishPage(page)
-                    val newPageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, document.pages.size + 1).create()
-                    page = document.startPage(newPageInfo)
+                    pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, document.pages.size + 1).create()
+                    page = document.startPage(pageInfo)
                     canvas = page.canvas
                     yPosition = MARGIN
                 }
 
                 canvas.drawLine(MARGIN, yPosition - 5, PAGE_WIDTH - MARGIN, yPosition - 5, paintLine)
-                val primeiraFotoUri = fase.caminhosFotos.firstOrNull()
-                var textX = MARGIN
-                var fotoHeight = 0f
-                if (primeiraFotoUri != null) {
-                    try {
-                        val fotoStream = context.contentResolver.openInputStream(Uri.parse(primeiraFotoUri))
-                        val fotoBitmap = BitmapFactory.decodeStream(fotoStream)
-                        val scaledFoto = Bitmap.createScaledBitmap(fotoBitmap, 80, 80, true)
-                        canvas.drawBitmap(scaledFoto, MARGIN, yPosition, null)
-                        fotoStream?.close()
-                        textX = MARGIN + 95
-                        fotoHeight = 85f
-                    } catch (e: Exception) { /* Ignora foto corrompida */ }
-                }
-                canvas.drawText("Fase:", textX, yPosition + 10, paintHeader)
-                var textY = yPosition + 22
+
+                // --- Lógica de Quebra de Linha para Descrição ---
+                val textYStart = yPosition + 10
+                var textY = textYStart
                 val descricao = fase.descricao
                 var start = 0
                 while (start < descricao.length) {
-                    val end = paintBody.breakText(descricao, start, descricao.length, true, PAGE_WIDTH - textX - MARGIN, null)
-                    canvas.drawText(descricao, start, start + end, textX, textY, paintBody)
+                    val end = paintBody.breakText(descricao, start, descricao.length, true, PAGE_WIDTH - MARGIN * 2, null)
+                    canvas.drawText(descricao, start, start + end, MARGIN, textY, paintBody)
                     start += end
                     textY += 12
                 }
-                yPosition += Math.max(fotoHeight, textY - yPosition + 10)
+                yPosition = textY // Atualiza a posição Y após o texto
+
+                // <<< LÓGICA ATUALIZADA PARA DESENHAR TODAS AS FOTOS >>>
+                if (fase.caminhosFotos.isNotEmpty()) {
+                    val fotoSize = 60f
+                    val fotoSpacing = 8f
+                    var currentX = MARGIN
+                    yPosition += 5 // Espaço entre o texto e as fotos
+
+                    fase.caminhosFotos.forEach { fotoUriString ->
+                        // Se a próxima foto não couber na linha, quebra a linha
+                        if (currentX + fotoSize > PAGE_WIDTH - MARGIN) {
+                            currentX = MARGIN
+                            yPosition += fotoSize + fotoSpacing
+                        }
+
+                        // Checa se a nova linha de fotos cabe na página
+                        if (yPosition > PAGE_HEIGHT - 80) {
+                            document.finishPage(page)
+                            pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, document.pages.size + 1).create()
+                            page = document.startPage(pageInfo)
+                            canvas = page.canvas
+                            yPosition = MARGIN
+                            currentX = MARGIN
+                        }
+
+                        try {
+                            val fotoStream = context.contentResolver.openInputStream(Uri.parse(fotoUriString))
+                            val fotoBitmap = BitmapFactory.decodeStream(fotoStream)
+                            val scaledFoto = Bitmap.createScaledBitmap(fotoBitmap, fotoSize.toInt(), fotoSize.toInt(), true)
+                            canvas.drawBitmap(scaledFoto, currentX, yPosition, null)
+                            fotoStream?.close()
+                        } catch (e: Exception) {
+                            // Desenha um placeholder se a foto falhar
+                            canvas.drawRect(currentX, yPosition, currentX + fotoSize, yPosition + fotoSize, paintLine)
+                        }
+                        currentX += fotoSize + fotoSpacing
+                    }
+                    yPosition += fotoSize + 15 // Atualiza a posição Y após a última linha de fotos
+                }
             }
 
             document.finishPage(page)
