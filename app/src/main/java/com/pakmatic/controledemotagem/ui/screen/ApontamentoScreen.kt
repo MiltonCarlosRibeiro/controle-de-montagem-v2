@@ -258,7 +258,32 @@ private fun InputSection(nome: String, onNomeChange: (String) -> Unit, item: Str
 fun DialogImpedimento(viewModel: ApontamentoViewModel, apontamento: Apontamento?) {
     if (apontamento != null) {
         val descricaoImpedimento by viewModel.descricaoImpedimento.collectAsState()
-        AlertDialog(onDismissRequest = { viewModel.onFecharDialogImpedimento() }, title = { Text("Registrar Impedimento") }, text = { OutlinedTextField(value = descricaoImpedimento, onValueChange = viewModel::onDescricaoImpedimentoChange, label = { Text("Motivo da parada") }) }, confirmButton = { Button(onClick = { viewModel.registrarImpedimento() }) { Text("Confirmar") } }, dismissButton = { TextButton(onClick = { viewModel.onFecharDialogImpedimento() }) { Text("Cancelar") } })
+        AlertDialog(
+            onDismissRequest = { viewModel.onFecharDialogImpedimento() },
+            title = { Text("Registrar Impedimento") },
+            text = {
+                OutlinedTextField(
+                    value = descricaoImpedimento,
+                    onValueChange = viewModel::onDescricaoImpedimentoChange,
+                    label = { Text("Motivo da parada") }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.registrarImpedimento()
+                        viewModel.onFecharDialogImpedimento()
+                    }
+                ) {
+                    Text("Pausar e Voltar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onFecharDialogImpedimento() }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 

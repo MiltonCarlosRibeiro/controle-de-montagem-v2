@@ -85,7 +85,7 @@ object PdfExporterDetalhado {
 
                 // <<< LÓGICA ATUALIZADA PARA DESENHAR TODAS AS FOTOS >>>
                 if (fase.caminhosFotos.isNotEmpty()) {
-                    val fotoSize = 60f
+                    val fotoSize = 255f // 9cm em pontos
                     val fotoSpacing = 8f
                     var currentX = MARGIN
                     yPosition += 5 // Espaço entre o texto e as fotos
@@ -119,7 +119,7 @@ object PdfExporterDetalhado {
                         }
                         currentX += fotoSize + fotoSpacing
                     }
-                    yPosition += fotoSize + 15 // Atualiza a posição Y após a última linha de fotos
+                    yPosition += fotoSize + fotoSpacing + 15 // Atualiza a posição Y após a última linha de fotos
                 }
             }
 
