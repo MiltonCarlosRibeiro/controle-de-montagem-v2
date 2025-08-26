@@ -7,6 +7,9 @@ import android.net.Uri
 import android.widget.DatePicker
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -51,7 +55,7 @@ private fun formatCronometro(totalSeconds: Long): String { if (totalSeconds < 0)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
+fun ApontamentoScreen(viewModel: ApontamentoViewModel, navController: NavController) {
     val context = LocalContext.current
     val apontamentosCompletos by viewModel.todosApontamentos.collectAsState()
     val apontamentoParaImpedimento by viewModel.mostrarDialogImpedimento.collectAsState()
@@ -64,7 +68,7 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
     val historico = apontamentosCompletos.filter { it.apontamento.status == "Finalizado" }
     val ultimoItemFinalizado = historico.maxByOrNull { it.apontamento.timestampFinal ?: 0 }
 
-    DialogImpedimento(viewModel, apontamentoParaImpedimento)
+    DialogImpedimento(viewModel, apontamentoParaImpedimento, navController)
     DialogEdicao(viewModel, apontamentoParaEditar)
     DialogDelecao(viewModel, apontamentoParaDeletar)
     DialogNovaFase(viewModel, apontamentoParaNovaFase)
@@ -90,8 +94,8 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (itemAtivo != null) {
-                Spacer(Modifier.height(8.dp)); CronometroAtivo(item = itemAtivo); Spacer(Modifier.height(16.dp)); AcoesDaMontagemAtiva(apontamento = itemAtivo.apontamento, viewModel = viewModel); Spacer(Modifier.height(16.dp)); Divider()
-                GerenciadorDeFases(itemAtivo, viewModel)
+                Spacer(Modifier.height(8.dp)); CronometroAtivo(item = itemAtivo, viewModel = viewModel); Spacer(Modifier.height(16.dp)); AcoesDaMontagemAtiva(apontamento = itemAtivo.apontamento, viewModel = viewModel); Spacer(Modifier.height(16.dp)); Divider()
+                GerenciadorDeFases(itemAtivo, viewModel, navController)
             } else {
                 Text("Histórico de Montagens", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth())
                 if (historico.isEmpty()) { Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nenhum item finalizado.\nClique no '+' para iniciar.", color = Color.Gray) } }
@@ -102,36 +106,32 @@ fun ApontamentoScreen(viewModel: ApontamentoViewModel) {
 }
 
 
-// <<< A DEFINIÇÃO DESTA FUNÇÃO ESTAVA FALTANDO >>>
 @Composable
 fun AcoesDaMontagemAtiva(apontamento: Apontamento, viewModel: ApontamentoViewModel) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
     ) {
-        if (apontamento.status == "Em Andamento") {
-            Button(
-                onClick = { viewModel.onAbrirDialogImpedimento(apontamento) },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-            ) {
-                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Impedimento")
-            }
+        // O botão de impedimento é sempre visível para montagens ativas
+        Button(
+            onClick = { viewModel.onAbrirDialogImpedimento(apontamento) },
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+        ) {
+            Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text("Impedimento")
+        }
+
+        // Botão de Finalizar é visível quando "Em Andamento"
+        AnimatedVisibility(
+            visible = apontamento.status == "Em Andamento" || apontamento.status == "Parado",
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
             Button(onClick = { viewModel.finalizarMontagem(apontamento) }) {
                 Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                 Text("Finalizar")
-            }
-        }
-        if (apontamento.status == "Parado") {
-            Button(
-                onClick = { viewModel.retomarTrabalho(apontamento) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047))
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Retomar")
             }
         }
     }
@@ -139,7 +139,7 @@ fun AcoesDaMontagemAtiva(apontamento: Apontamento, viewModel: ApontamentoViewMod
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel: ApontamentoViewModel) {
+fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel: ApontamentoViewModel, navController: NavController) {
     val context = LocalContext.current
     var fotoUri by remember { mutableStateOf<Uri?>(null) }
     var faseParaFotografar by remember { mutableStateOf<Fase?>(null) }
@@ -157,18 +157,21 @@ fun ColumnScope.GerenciadorDeFases(itemCompleto: ApontamentoCompleto, viewModel:
             items(itemCompleto.fases, key = { it.id }) { fase ->
                 FaseCard(fase = fase, onFinalizarClick = { viewModel.finalizarFase(fase) }, onTirarNovaFotoClick = { faseParaFotografar = fase; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraAddLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onSubstituirFotoClick = { fotoAntigaUriString -> faseParaFotografar = fase; fotoAntigaParaSubstituir = fotoAntigaUriString; if (cameraPermissionState.status.isGranted) { val uri = CameraFileProvider.getUri(context); fotoUri = uri; cameraReplaceLauncher.launch(uri) } else { cameraPermissionState.launchPermissionRequest() } }, onGirarFotoClick = { fotoUriString -> viewModel.girarFotoDaFase(context, fase, fotoUriString) },
                     onEditClick = { viewModel.onAbrirDialogEdicaoFase(fase) },
-                    onDeleteClick = { viewModel.deletarFase(fase) }
+                    onDeleteClick = { viewModel.deletarFase(fase) },
+                    onFotoClick = { fotoUriString ->
+                        navController.navigate("fullScreenImage/${Uri.encode(fotoUriString)}")
+                    }
                 )
             }
         }
     }
-    Button(onClick = { viewModel.onAbrirDialogNovaFase(itemCompleto.apontamento) }, enabled = itemCompleto.apontamento.status == "Em Andamento", modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Button(onClick = { viewModel.onAbrirDialogNovaFase(itemCompleto.apontamento) }, enabled = itemCompleto.apontamento.status == "Em Andamento" || itemCompleto.apontamento.status == "Parado", modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Adicionar Nova Fase")
     }
 }
 
 @Composable
-fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () -> Unit, onSubstituirFotoClick: (String) -> Unit, onGirarFotoClick: (String) -> Unit, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
+fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () -> Unit, onSubstituirFotoClick: (String) -> Unit, onGirarFotoClick: (String) -> Unit, onEditClick: () -> Unit, onDeleteClick: () -> Unit, onFotoClick: (String) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Column(Modifier.padding(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -185,7 +188,7 @@ fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(fase.caminhosFotos) { fotoUriString ->
                     Box {
-                        AsyncImage(model = Uri.parse(fotoUriString), contentDescription = "Foto da fase", modifier = Modifier.size(70.dp).clip(MaterialTheme.shapes.small).clickable { onSubstituirFotoClick(fotoUriString) }, contentScale = ContentScale.Crop)
+                        AsyncImage(model = Uri.parse(fotoUriString), contentDescription = "Foto da fase", modifier = Modifier.size(70.dp).clip(MaterialTheme.shapes.small).clickable { onFotoClick(fotoUriString) }, contentScale = ContentScale.Crop)
                         IconButton(onClick = { onGirarFotoClick(fotoUriString) }, modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.5f), shape = MaterialTheme.shapes.small).size(24.dp)) { Icon(Icons.Default.RotateRight, contentDescription = "Girar Foto", tint = Color.White, modifier = Modifier.size(16.dp)) }
                     }
                 }
@@ -196,17 +199,56 @@ fun FaseCard(fase: Fase, onFinalizarClick: () -> Unit, onTirarNovaFotoClick: () 
 }
 
 @Composable
-fun CronometroAtivo(item: ApontamentoCompleto) {
+fun CronometroAtivo(item: ApontamentoCompleto, viewModel: ApontamentoViewModel) {
     var tempoDecorrido by remember { mutableStateOf(0L) }
-    LaunchedEffect(key1 = item.apontamento.status) {
-        if (item.apontamento.status == "Em Andamento") { val tempoParadoTotal = item.tempoTotalParadoSegundos; val inicio = item.apontamento.timestampInicio; while (true) { val agora = System.currentTimeMillis(); val decorridoTotal = (agora - inicio) / 1000; tempoDecorrido = decorridoTotal - tempoParadoTotal; delay(1000) } } else { val tempoParadoPrevisto = item.impedimentos.filter { it.timestampFinal != null }.sumOf { it.duracaoSegundos }; val decorridoTotal = (System.currentTimeMillis() - item.apontamento.timestampInicio) / 1000; tempoDecorrido = decorridoTotal - tempoParadoPrevisto }
+    val isCronometroPausado by viewModel.isCronometroPausado.collectAsState()
+
+    LaunchedEffect(key1 = item.apontamento.status, isCronometroPausado) {
+        val apontamentoStatus = item.apontamento.status
+        if (apontamentoStatus == "Em Andamento" && !isCronometroPausado) {
+            val tempoParadoTotal = item.tempoTotalParadoSegundos
+            val inicio = item.apontamento.timestampInicio
+            while (true) {
+                val agora = System.currentTimeMillis()
+                val decorridoTotal = (agora - inicio) / 1000
+                tempoDecorrido = decorridoTotal - tempoParadoTotal
+                delay(1000)
+            }
+        } else {
+            val tempoParadoPrevisto = item.impedimentos.filter { it.timestampFinal != null }.sumOf { it.duracaoSegundos }
+            val decorridoTotal = (System.currentTimeMillis() - item.apontamento.timestampInicio) / 1000
+            tempoDecorrido = decorridoTotal - tempoParadoPrevisto
+        }
     }
-    val corCronometro = if (item.apontamento.status == "Em Andamento") Color(0xFF00897B) else Color(0xFFF57C00)
+
+    val corCronometro = when {
+        item.apontamento.status == "Em Andamento" && !isCronometroPausado -> Color(0xFF00897B)
+        else -> Color(0xFFF57C00)
+    }
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text("MONTAGEM ATIVA", style = MaterialTheme.typography.titleMedium)
         Text(item.apontamento.item, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(text = formatCronometro(tempoDecorrido), fontSize = 64.sp, fontWeight = FontWeight.Bold, color = corCronometro)
         Text("Status: ${item.apontamento.status}", style = MaterialTheme.typography.titleMedium, color = corCronometro)
+
+        Spacer(Modifier.height(8.dp))
+
+        if (item.apontamento.status != "Finalizado") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { viewModel.toggleCronometro() }) {
+                    if (isCronometroPausado) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Iniciar Cronômetro", modifier = Modifier.size(48.dp), tint = Color(0xFF43A047))
+                    } else {
+                        Icon(Icons.Default.Pause, contentDescription = "Pausar Cronômetro", modifier = Modifier.size(48.dp), tint = Color(0xFFF57C00))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -255,7 +297,7 @@ private fun InputSection(nome: String, onNomeChange: (String) -> Unit, item: Str
 }
 
 @Composable
-fun DialogImpedimento(viewModel: ApontamentoViewModel, apontamento: Apontamento?) {
+fun DialogImpedimento(viewModel: ApontamentoViewModel, apontamento: Apontamento?, navController: NavController) {
     if (apontamento != null) {
         val descricaoImpedimento by viewModel.descricaoImpedimento.collectAsState()
         AlertDialog(
@@ -273,6 +315,7 @@ fun DialogImpedimento(viewModel: ApontamentoViewModel, apontamento: Apontamento?
                     onClick = {
                         viewModel.registrarImpedimento()
                         viewModel.onFecharDialogImpedimento()
+                        navController.popBackStack()
                     }
                 ) {
                     Text("Pausar e Voltar")
@@ -312,7 +355,7 @@ fun DialogEdicao(viewModel: ApontamentoViewModel, apontamentoParaEditar: Apontam
 
     val calendarFinal = Calendar.getInstance().apply { timeInMillis = apontamentoParaEditar.timestampFinal ?: System.currentTimeMillis() }
     val datePickerStateFinal = rememberDatePickerState(initialSelectedDateMillis = apontamentoParaEditar.timestampFinal)
-    if (showDatePickerFinal) { DatePickerDialog(onDismissRequest = { showDatePickerFinal = false }, confirmButton = { TextButton(onClick = { showDatePickerFinal = false; datePickerStateFinal.selectedDateMillis?.let { val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()); viewModel.onDataFinalChange(sdf.format(Date(it))) } }) { Text("OK") } }) { DatePicker(state = datePickerStateFinal) } }
+    if (showDatePickerFinal) { DatePickerDialog(onDismissRequest = { showDatePickerFinal = false }, confirmButton = { TextButton(onClick = { showDatePickerFinal = false; datePickerStateFinal.selectedDateMillis?.let { val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()); viewModel.onDataFinalChange(sdf.format(Date(it))) } }) { DatePicker(state = datePickerStateFinal) } }) { DatePicker(state = datePickerStateFinal) } }
     val timePickerStateFinal = rememberTimePickerState(initialHour = calendarFinal.get(Calendar.HOUR_OF_DAY), initialMinute = calendarFinal.get(Calendar.MINUTE))
     if (showTimePickerFinal) { AlertDialog(onDismissRequest = { showTimePickerFinal = false }, title = { Text("Selecione a Hora") }, text = { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center){ TimePicker(state = timePickerStateFinal) }}, confirmButton = { TextButton(onClick = { showTimePickerFinal = false; viewModel.onHoraFinalChange(String.format("%02d:%02d", timePickerStateFinal.hour, timePickerStateFinal.minute)) }) { Text("OK") } }) }
 

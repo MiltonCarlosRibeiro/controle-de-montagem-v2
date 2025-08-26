@@ -1,32 +1,33 @@
 package com.pakmatic.controledemotagem.viewmodel
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pakmatic.controledemotagem.data.local.*
 import com.pakmatic.controledemotagem.util.PdfExporterDetalhado
 import com.pakmatic.controledemotagem.util.TxtExporter
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 
-class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
+class ApontamentoViewModel(private val dao: ApontamentoDao) : AndroidViewModel(Application()) {
 
-    // (O início do ViewModel não muda)
     private val _nomeResponsavel = MutableStateFlow("")
     val nomeResponsavel = _nomeResponsavel.asStateFlow()
-    // ... (outros StateFlows)
     private val _item = MutableStateFlow("")
     val item = _item.asStateFlow()
     private val _descricaoItem = MutableStateFlow("")
@@ -51,14 +52,14 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     val descricaoFase = _descricaoFase.asStateFlow()
     private val _apontamentoParaNovaFase = MutableStateFlow<Apontamento?>(null)
     val apontamentoParaNovaFase = _apontamentoParaNovaFase.asStateFlow()
-
-    // <<< NOVOS STATEFLOWS PARA CRUD DE FASE >>>
     private val _faseParaEditar = MutableStateFlow<Fase?>(null)
     val faseParaEditar = _faseParaEditar.asStateFlow()
 
-    val todosApontamentos = dao.buscarTodosCompletos().stateIn(scope = viewModelScope, started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000L), initialValue = emptyList())
+    private val _isCronometroPausado = MutableStateFlow(false)
+    val isCronometroPausado: StateFlow<Boolean> = _isCronometroPausado.asStateFlow()
 
-    // (Funções de atualização de texto não mudam)
+    val todosApontamentos = dao.buscarTodosCompletos().stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000L), initialValue = emptyList())
+
     fun onNomeResponsavelChange(novoNome: String) { _nomeResponsavel.value = novoNome }
     fun onItemChange(novoItem: String) { _item.value = novoItem }
     fun onDescricaoItemChange(novaDescricao: String) { _descricaoItem.value = novaDescricao }
@@ -69,7 +70,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     fun onDataFinalChange(novaData: String) { _dataFinalEdit.value = novaData }
     fun onHoraFinalChange(novaHora: String) { _horaFinalEdit.value = novaHora }
 
-    // (Funções de controle de Dialogs não mudam, exceto as novas para Fase)
     fun onAbrirDialogImpedimento(apontamento: Apontamento) { _mostrarDialogImpedimento.value = apontamento }
     fun onFecharDialogImpedimento() { _mostrarDialogImpedimento.value = null }
     fun onAbrirDialogDelecao(apontamento: Apontamento) { _apontamentoParaDeletar.value = apontamento }
@@ -89,7 +89,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     }
     fun onFecharDialogEdicao() { limparCampos(); _apontamentoParaEditar.value = null }
 
-    // <<< NOVAS FUNÇÕES PARA CRUD DE FASE >>>
     fun onAbrirDialogEdicaoFase(fase: Fase) {
         _descricaoFase.value = fase.descricao
         _faseParaEditar.value = fase
@@ -112,8 +111,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
         }
     }
 
-
-    // (O resto das funções não muda)
     fun salvarEdicao() {
         val apontamentoAntigo = _apontamentoParaEditar.value ?: return
         try {
@@ -126,24 +123,96 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     }
     fun reabrirMontagem(apontamento: Apontamento) {
         viewModelScope.launch {
-            val apontamentoReaberto = apontamento.copy(status = "Em Andamento", timestampFinal = null)
+            val apontamentoReaberto = apontamento.copy(status = "Parado", timestampFinal = null)
             dao.atualizarApontamento(apontamentoReaberto)
+            _isCronometroPausado.value = true
         }
     }
-    fun adicionarFotoAFase(fase: Fase, fotoUri: Uri) {
-        viewModelScope.launch {
-            val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply { add(fotoUri.toString()) }
-            val faseAtualizada = fase.copy(caminhosFotos = novaListaDeFotos)
-            dao.atualizarFase(faseAtualizada)
+
+    fun toggleCronometro() {
+        _isCronometroPausado.value = !_isCronometroPausado.value
+        if (!_isCronometroPausado.value) {
+            viewModelScope.launch(Dispatchers.IO) {
+                todosApontamentos.value.firstOrNull { it.apontamento.status == "Parado" }?.let { completo ->
+                    val apontamento = completo.apontamento
+                    dao.atualizarApontamento(apontamento.copy(status = "Em Andamento"))
+                }
+            }
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                todosApontamentos.value.firstOrNull { it.apontamento.status == "Em Andamento" }?.let { completo ->
+                    val apontamento = completo.apontamento
+                    dao.atualizarApontamento(apontamento.copy(status = "Parado"))
+                }
+            }
         }
     }
-    fun substituirFotoDaFase(fase: Fase, fotoAntigaUri: String, novaFotoUri: Uri) {
-        viewModelScope.launch {
-            val novaListaDeFotos = fase.caminhosFotos.toMutableList().map { if (it == fotoAntigaUri) novaFotoUri.toString() else it }
-            val faseAtualizada = fase.copy(caminhosFotos = novaListaDeFotos)
-            dao.atualizarFase(faseAtualizada)
+
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap? {
+        val matrix = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun saveBitmapToFile(context: Context, bitmap: Bitmap): Uri? {
+        val filename = "JPEG_${System.currentTimeMillis()}.jpg"
+        val outputDir = File(context.filesDir, "photos")
+        if (!outputDir.exists()) outputDir.mkdirs()
+        val photoFile = File(outputDir, filename)
+
+        return try {
+            FileOutputStream(photoFile).use { out ->
+                val targetWidth = 480
+                val targetHeight = 854
+                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+            }
+            Uri.fromFile(photoFile)
+        } catch (e: Exception) {
+            Log.e("ApontamentoViewModel", "Erro ao salvar bitmap: ${e.message}")
+            null
         }
     }
+
+    private suspend fun processAndSavePhoto(context: Context, originalUri: Uri): Uri? = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(originalUri)?.use { inputStream ->
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val rotatedBitmap = if (bitmap.width > bitmap.height) {
+                    rotateBitmap(bitmap, 90f)
+                } else {
+                    bitmap
+                }
+                rotatedBitmap?.let { saveBitmapToFile(context, it) }
+            }
+        } catch (e: Exception) {
+            Log.e("ApontamentoViewModel", "Erro ao processar foto: ${e.message}")
+            null
+        }
+    }
+
+    fun adicionarFotoAFase(fase: Fase, fotoUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val context = getApplication<Application>().applicationContext
+        val savedUri = processAndSavePhoto(context, fotoUri)
+        savedUri?.let { uri ->
+            val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply { add(uri.toString()) }
+            dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
+        }
+    }
+
+    fun substituirFotoDaFase(fase: Fase, oldUriString: String, newUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val context = getApplication<Application>().applicationContext
+        val savedUri = processAndSavePhoto(context, newUri)
+        savedUri?.let { uri ->
+            val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply {
+                val index = indexOf(oldUriString)
+                if (index != -1) {
+                    set(index, uri.toString())
+                }
+            }
+            dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
+        }
+    }
+
     fun girarFotoDaFase(context: Context, fase: Fase, fotoUriString: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -153,7 +222,6 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
                         val bitmap = BitmapFactory.decodeStream(inputStream)
                         val matrix = Matrix().apply { postRotate(90f) }
                         val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-
                         context.contentResolver.openOutputStream(fotoUri)?.use { outputStream ->
                             rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
                         }
@@ -166,6 +234,7 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
             }
         }
     }
+
     fun confirmarDelecao() { val apontamentoAtual = _apontamentoParaDeletar.value ?: return; viewModelScope.launch { dao.deletarApontamento(apontamentoAtual); onFecharDialogDelecao() } }
     fun iniciarNovaMontagem() { if (nomeResponsavel.value.isBlank() || item.value.isBlank()) return; viewModelScope.launch { val novoApontamento = Apontamento(nomeResponsavel = nomeResponsavel.value, item = item.value, descricaoItem = descricaoItem.value, timestampInicio = System.currentTimeMillis(), status = "Em Andamento"); dao.inserirApontamento(novoApontamento); limparCampos() } }
     fun registrarImpedimento() { val apontamentoAtual = mostrarDialogImpedimento.value ?: return; if (descricaoImpedimento.value.isBlank()) return; viewModelScope.launch { val novoImpedimento = Impedimento(apontamentoId = apontamentoAtual.id, descricao = descricaoImpedimento.value, timestampInicio = System.currentTimeMillis()); dao.inserirImpedimento(novoImpedimento); val apontamentoAtualizado = apontamentoAtual.copy(status = "Parado"); dao.atualizarApontamento(apontamentoAtualizado); _descricaoImpedimento.value = ""; onFecharDialogImpedimento() } }
@@ -177,5 +246,3 @@ class ApontamentoViewModel(private val dao: ApontamentoDao) : ViewModel() {
     fun exportarRelatorioTxt(context: Context, uri: Uri) { viewModelScope.launch(Dispatchers.IO) { val dados = todosApontamentos.value; val textoFormatado = TxtExporter.formatarParaTxt(dados); context.contentResolver.openOutputStream(uri)?.use { it.write(textoFormatado.toByteArray()) } } }
     fun exportarRelatorioDetalhadoPdf(context: Context, uri: Uri, apontamentos: List<ApontamentoCompleto>) { viewModelScope.launch(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { outputStream -> PdfExporterDetalhado.gerarPdf(context, outputStream, apontamentos) } } }
 }
-
-class ApontamentoViewModelFactory(private val dao: ApontamentoDao) : ViewModelProvider.Factory { override fun <T : ViewModel> create(modelClass: Class<T>): T { if (modelClass.isAssignableFrom(ApontamentoViewModel::class.java)) { @Suppress("UNCHECKED_CAST") return ApontamentoViewModel(dao) as T }; throw IllegalArgumentException("Unknown ViewModel class") } }
