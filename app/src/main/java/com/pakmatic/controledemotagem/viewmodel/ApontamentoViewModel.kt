@@ -1,11 +1,16 @@
 package com.pakmatic.controledemotagem.viewmodel
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,19 +18,18 @@ import com.pakmatic.controledemotagem.data.local.*
 import com.pakmatic.controledemotagem.util.PdfExporterDetalhado
 import com.pakmatic.controledemotagem.util.TxtExporter
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.TimeUnit
-import androidx.core.content.FileProvider
 
 class ApontamentoViewModel(private val dao: ApontamentoDao, application: Application) : AndroidViewModel(application) {
+
+    // Tag única para todos os logs desta classe
+    private val TAG = "ApontamentoViewModelLogs"
 
     private val appContext = application.applicationContext
 
@@ -148,73 +152,166 @@ class ApontamentoViewModel(private val dao: ApontamentoDao, application: Applica
     }
 
     private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap? {
+        Log.d(TAG, "rotateBitmap: Rotacionando bitmap em $degrees graus.")
         val matrix = Matrix().apply { postRotate(degrees) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    private fun saveBitmapToFile(context: Context, bitmap: Bitmap): Uri? {
-        val outputDir = File(context.cacheDir, "images")
-        outputDir.mkdirs()
-        val photoFile = File.createTempFile(
-            "img_${System.currentTimeMillis()}_",
-            ".jpg",
-            outputDir
-        )
-        return try {
-            FileOutputStream(photoFile).use { out ->
-                val targetWidth = 480
-                val targetHeight = 854
-                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
-                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+//    private fun saveBitmapToFile(context: Context, bitmap: Bitmap): Uri? {
+//        Log.d(TAG, "saveBitmapToFile: Iniciando salvamento de bitmap.")
+//        // --- CORREÇÃO APLICADA AQUI ---
+//        // Alterado de context.cacheDir para context.filesDir para armazenamento persistente.
+//        val outputDir = File(context.filesDir, "images")
+//        if (!outputDir.exists()) {
+//            outputDir.mkdirs()
+//            Log.d(TAG, "saveBitmapToFile: Diretório 'images' criado em: ${outputDir.absolutePath}")
+//        } else {
+//            Log.d(TAG, "saveBitmapToFile: Usando diretório existente: ${outputDir.absolutePath}")
+//        }
+//
+//        val photoFile = File.createTempFile(
+//            "img_${System.currentTimeMillis()}_",
+//            ".jpg",
+//            outputDir
+//        )
+//        Log.d(TAG, "saveBitmapToFile: Arquivo temporário criado em: ${photoFile.absolutePath}")
+//
+//        return try {
+//            FileOutputStream(photoFile).use { out ->
+//                // Redimensionando e comprimindo a imagem
+//                val targetWidth = 480
+//                val targetHeight = 854
+//                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+//                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+//                Log.d(TAG, "saveBitmapToFile: Bitmap comprimido e salvo com sucesso.")
+//            }
+//            val fileUri = FileProvider.getUriForFile(
+//                context,
+//                "${context.packageName}.provider",
+//                photoFile
+//            )
+//            Log.d(TAG, "saveBitmapToFile: Uri gerada pelo FileProvider: $fileUri")
+//            fileUri
+//        } catch (e: Exception) {
+//            Log.e(TAG, "saveBitmapToFile: Erro ao salvar bitmap: ${e.message}", e)
+//            null
+//        }
+//    }
+
+    // ADICIONE ESTA NOVA FUNÇÃO PRIVADA
+    private fun saveBitmapToGallery(context: Context, bitmap: Bitmap, albumName: String): Uri? {
+        val displayName = "IMG_${System.currentTimeMillis()}.jpg"
+        val mimeType = "image/jpeg"
+        val compressFormat = Bitmap.CompressFormat.JPEG
+
+        // Lógica para Android 10 (API 29) e superior
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$albumName")
             }
-            FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                photoFile
-            )
-        } catch (e: Exception) {
-            Log.e("ApontamentoViewModel", "Erro ao salvar bitmap: ${e.message}")
-            null
+
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+            uri?.let {
+                try {
+                    resolver.openOutputStream(it)?.use { outputStream ->
+                        if (!bitmap.compress(compressFormat, 95, outputStream)) { return null }
+                    }
+                    return it
+                } catch (e: Exception) {
+                    resolver.delete(it, null, null)
+                    e.printStackTrace()
+                    return null
+                }
+            }
+            return null
+
+        } else {
+            // Lógica para Android 9 (API 28) e inferior
+            // IMPORTANTE: Este trecho assume que a permissão WRITE_EXTERNAL_STORAGE já foi concedida!
+            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            val albumDir = File(picturesDir, albumName)
+            if (!albumDir.exists()) {
+                albumDir.mkdirs()
+            }
+            val imageFile = File(albumDir, displayName)
+
+            try {
+                FileOutputStream(imageFile).use { outputStream ->
+                    if (!bitmap.compress(compressFormat, 95, outputStream)) { return null }
+                }
+                MediaScannerConnection.scanFile(context, arrayOf(imageFile.absolutePath), arrayOf(mimeType), null)
+                return Uri.fromFile(imageFile)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return null
+            }
         }
     }
 
+
+
+
     private suspend fun processAndSavePhoto(context: Context, originalUri: Uri): Uri? = withContext(Dispatchers.IO) {
+        Log.d(TAG, "processAndSavePhoto: Iniciando processamento para a Uri original: $originalUri")
         try {
             context.contentResolver.openInputStream(originalUri)?.use { inputStream ->
                 val bitmap = BitmapFactory.decodeStream(inputStream)
+                Log.d(TAG, "processAndSavePhoto: Bitmap decodificado da Uri original. Dimensões: ${bitmap.width}x${bitmap.height}")
                 val rotatedBitmap = if (bitmap.width > bitmap.height) {
+                    Log.d(TAG, "processAndSavePhoto: A imagem está em paisagem, rotacionando...")
                     rotateBitmap(bitmap, 90f)
                 } else {
+                    Log.d(TAG, "processAndSavePhoto: A imagem está em retrato, não precisa rotacionar.")
                     bitmap
                 }
-                rotatedBitmap?.let { saveBitmapToFile(context, it) }
+                rotatedBitmap?.let {
+                    saveBitmapToGallery(context, it, "ControleDeMontagem")
+                }
             }
         } catch (e: Exception) {
-            Log.e("ApontamentoViewModel", "Erro ao processar foto: ${e.message}")
+            Log.e(TAG, "processAndSavePhoto: Erro ao processar foto: ${e.message}", e)
             null
         }
     }
     fun adicionarFotoAFase(fase: Fase, fotoUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        Log.d(TAG, "adicionarFotoAFase: Tentando adicionar foto à fase ID: ${fase.id}")
         val savedUri = processAndSavePhoto(appContext, fotoUri)
-        savedUri?.let { uri ->
-            val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply { add(uri.toString()) }
+        if (savedUri != null) {
+            Log.d(TAG, "adicionarFotoAFase: Foto salva com sucesso. Nova Uri: $savedUri")
+            val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply { add(savedUri.toString()) }
             dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
+            Log.d(TAG, "adicionarFotoAFase: Fase ID: ${fase.id} atualizada no banco de dados com a nova foto.")
+        } else {
+            Log.e(TAG, "adicionarFotoAFase: Falha ao salvar a foto. A fase não foi atualizada.")
         }
     }
     fun substituirFotoDaFase(fase: Fase, oldUriString: String, newUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        Log.d(TAG, "substituirFotoDaFase: Tentando substituir foto na fase ID: ${fase.id}. Uri antiga: $oldUriString")
         val savedUri = processAndSavePhoto(appContext, newUri)
-        savedUri?.let { uri ->
+        if (savedUri != null) {
+            Log.d(TAG, "substituirFotoDaFase: Nova foto salva com sucesso. Nova Uri: $savedUri")
             val novaListaDeFotos = fase.caminhosFotos.toMutableList().apply {
                 val index = indexOf(oldUriString)
                 if (index != -1) {
-                    set(index, uri.toString())
+                    set(index, savedUri.toString())
+                    Log.d(TAG, "substituirFotoDaFase: Uri antiga encontrada no índice $index e substituída.")
+                } else {
+                    Log.w(TAG, "substituirFotoDaFase: Uri antiga ($oldUriString) não encontrada na lista de fotos da fase.")
                 }
             }
             dao.atualizarFase(fase.copy(caminhosFotos = novaListaDeFotos))
+            Log.d(TAG, "substituirFotoDaFase: Fase ID: ${fase.id} atualizada no banco de dados.")
+        } else {
+            Log.e(TAG, "substituirFotoDaFase: Falha ao salvar a nova foto. A substituição foi cancelada.")
         }
     }
     fun girarFotoDaFase(context: Context, fase: Fase, fotoUriString: String) {
         viewModelScope.launch {
+            Log.d(TAG, "girarFotoDaFase: Iniciando rotação para a foto: $fotoUriString")
             withContext(Dispatchers.IO) {
                 try {
                     val fotoUri = Uri.parse(fotoUriString)
@@ -222,15 +319,22 @@ class ApontamentoViewModel(private val dao: ApontamentoDao, application: Applica
                         val bitmap = BitmapFactory.decodeStream(inputStream)
                         val matrix = Matrix().apply { postRotate(90f) }
                         val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                        context.contentResolver.openOutputStream(fotoUri)?.use { outputStream ->
+
+                        // Sobrescrevendo o arquivo original com o bitmap rotacionado
+                        context.contentResolver.openOutputStream(fotoUri, "w")?.use { outputStream ->
                             rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
+                            Log.d(TAG, "girarFotoDaFase: Bitmap rotacionado e salvo de volta na mesma Uri.")
                         }
                     }
+                    // Força a UI a recompor, mesmo que a lista de URIs não mude
                     val faseAtualizada = fase.copy(caminhosFotos = fase.caminhosFotos.map { it })
                     withContext(Dispatchers.Main) {
                         dao.atualizarFase(faseAtualizada)
+                        Log.d(TAG, "girarFotoDaFase: Atualização da fase forçada para refletir a rotação na UI.")
                     }
-                } catch (e: Exception) { e.printStackTrace() }
+                } catch (e: Exception) {
+                    Log.e(TAG, "girarFotoDaFase: Erro ao girar a foto: ${e.message}", e)
+                }
             }
         }
     }
